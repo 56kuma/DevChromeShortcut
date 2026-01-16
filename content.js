@@ -4,9 +4,12 @@ class KeyboardNavigator {
   constructor() {
     this.linkHintMode = false;
     this.searchMode = false;
+    this.searchNavigationMode = false;
     this.keyBuffer = '';
     this.hints = [];
     this.searchTerm = '';
+    this.searchResults = [];
+    this.currentSearchIndex = -1;
     this.init();
   }
 
@@ -28,6 +31,12 @@ class KeyboardNavigator {
     // リンクヒントモード中
     if (this.linkHintMode) {
       this.handleLinkHintMode(e);
+      return;
+    }
+
+    // 検索ナビゲーションモード中
+    if (this.searchNavigationMode) {
+      this.handleSearchNavigationMode(e);
       return;
     }
 
@@ -256,10 +265,209 @@ class KeyboardNavigator {
   }
 
   performSearch(term) {
-    if (term) {
-      window.find(term, false, false, true, false, true, false);
+    if (!term) {
+      this.exitSearchMode();
+      return;
     }
-    this.exitSearchMode();
+
+    this.searchTerm = term;
+    this.searchResults = [];
+    this.currentSearchIndex = -1;
+
+    // 検索ボックスを削除
+    const searchBox = document.getElementById('keyboard-nav-search');
+    if (searchBox) {
+      searchBox.remove();
+    }
+
+    // 検索結果をハイライト
+    this.highlightSearchResults(term);
+
+    // 検索モードを終了し、検索ナビゲーションモードに移行
+    this.searchMode = false;
+    if (this.searchResults.length > 0) {
+      this.searchNavigationMode = true;
+      this.currentSearchIndex = 0;
+      this.focusSearchResult(0);
+      this.showSearchInfo();
+    }
+  }
+
+  highlightSearchResults(term) {
+    // 既存のハイライトをクリア
+    this.clearSearchHighlights();
+
+    const bodyText = document.body;
+    const walker = document.createTreeWalker(
+      bodyText,
+      NodeFilter.SHOW_TEXT,
+      {
+        acceptNode: (node) => {
+          // スクリプトやスタイルタグは除外
+          const parent = node.parentElement;
+          if (!parent) return NodeFilter.FILTER_REJECT;
+          const tagName = parent.tagName.toLowerCase();
+          if (['script', 'style', 'noscript'].includes(tagName)) {
+            return NodeFilter.FILTER_REJECT;
+          }
+          // 検索ボックスやヒントも除外
+          if (parent.closest('.keyboard-nav-search, .keyboard-nav-hint, .keyboard-nav-search-info')) {
+            return NodeFilter.FILTER_REJECT;
+          }
+          return NodeFilter.FILTER_ACCEPT;
+        }
+      }
+    );
+
+    const nodesToProcess = [];
+    let node;
+    while (node = walker.nextNode()) {
+      if (node.textContent.toLowerCase().includes(term.toLowerCase())) {
+        nodesToProcess.push(node);
+      }
+    }
+
+    // テキストノードを処理してハイライト
+    nodesToProcess.forEach(textNode => {
+      const text = textNode.textContent;
+      const parent = textNode.parentNode;
+      const regex = new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+      const matches = [];
+      let match;
+
+      while (match = regex.exec(text)) {
+        matches.push({
+          start: match.index,
+          end: match.index + match[0].length,
+          text: match[0]
+        });
+      }
+
+      if (matches.length === 0) return;
+
+      const fragment = document.createDocumentFragment();
+      let lastIndex = 0;
+
+      matches.forEach(m => {
+        // マッチ前のテキスト
+        if (m.start > lastIndex) {
+          fragment.appendChild(document.createTextNode(text.substring(lastIndex, m.start)));
+        }
+
+        // ハイライトされたテキスト
+        const span = document.createElement('span');
+        span.className = 'keyboard-nav-search-highlight';
+        span.textContent = m.text;
+        fragment.appendChild(span);
+        this.searchResults.push(span);
+
+        lastIndex = m.end;
+      });
+
+      // 残りのテキスト
+      if (lastIndex < text.length) {
+        fragment.appendChild(document.createTextNode(text.substring(lastIndex)));
+      }
+
+      parent.replaceChild(fragment, textNode);
+    });
+  }
+
+  clearSearchHighlights() {
+    const highlights = document.querySelectorAll('.keyboard-nav-search-highlight, .keyboard-nav-search-highlight-current');
+    highlights.forEach(span => {
+      const text = document.createTextNode(span.textContent);
+      span.parentNode.replaceChild(text, span);
+    });
+    this.searchResults = [];
+    this.currentSearchIndex = -1;
+
+    // 検索情報も削除
+    const info = document.getElementById('keyboard-nav-search-info');
+    if (info) {
+      info.remove();
+    }
+  }
+
+  focusSearchResult(index) {
+    if (index < 0 || index >= this.searchResults.length) return;
+
+    // 前のハイライトを通常に戻す
+    if (this.currentSearchIndex >= 0 && this.currentSearchIndex < this.searchResults.length) {
+      this.searchResults[this.currentSearchIndex].className = 'keyboard-nav-search-highlight';
+    }
+
+    // 新しいハイライトを現在として設定
+    this.currentSearchIndex = index;
+    const current = this.searchResults[index];
+    current.className = 'keyboard-nav-search-highlight-current';
+
+    // スクロールして表示
+    current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+    // 検索情報を更新
+    this.updateSearchInfo();
+  }
+
+  showSearchInfo() {
+    const info = document.createElement('div');
+    info.id = 'keyboard-nav-search-info';
+    info.className = 'keyboard-nav-search-info';
+    document.body.appendChild(info);
+    this.updateSearchInfo();
+  }
+
+  updateSearchInfo() {
+    const info = document.getElementById('keyboard-nav-search-info');
+    if (info) {
+      info.textContent = `${this.currentSearchIndex + 1} / ${this.searchResults.length}`;
+    }
+  }
+
+  handleSearchNavigationMode(e) {
+    if (e.key === 'Escape') {
+      this.exitSearchNavigationMode();
+      e.preventDefault();
+      return;
+    }
+
+    // 矢印キーでナビゲート
+    if (e.key === 'ArrowDown' || e.key === 'Down') {
+      const nextIndex = (this.currentSearchIndex + 1) % this.searchResults.length;
+      this.focusSearchResult(nextIndex);
+      e.preventDefault();
+      return;
+    }
+
+    if (e.key === 'ArrowUp' || e.key === 'Up') {
+      const prevIndex = this.currentSearchIndex - 1 < 0
+        ? this.searchResults.length - 1
+        : this.currentSearchIndex - 1;
+      this.focusSearchResult(prevIndex);
+      e.preventDefault();
+      return;
+    }
+
+    // Ctrl+Enterで新しいタブで開く
+    if (e.key === 'Enter' && e.ctrlKey) {
+      this.openCurrentSearchResultInNewTab();
+      e.preventDefault();
+      return;
+    }
+  }
+
+  openCurrentSearchResultInNewTab() {
+    if (this.currentSearchIndex < 0 || this.currentSearchIndex >= this.searchResults.length) {
+      return;
+    }
+
+    const current = this.searchResults[this.currentSearchIndex];
+    // 最も近い親リンクを探す
+    const link = current.closest('a[href]');
+
+    if (link && link.href) {
+      window.open(link.href, '_blank');
+    }
   }
 
   exitSearchMode() {
@@ -270,9 +478,15 @@ class KeyboardNavigator {
     }
   }
 
+  exitSearchNavigationMode() {
+    this.searchNavigationMode = false;
+    this.clearSearchHighlights();
+  }
+
   resetModes() {
     this.exitLinkHintMode();
     this.exitSearchMode();
+    this.exitSearchNavigationMode();
     this.keyBuffer = '';
   }
 }

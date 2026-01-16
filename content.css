@@ -44,3 +44,35 @@
   border-color: #4A90E2;
   box-shadow: 0 0 0 3px rgba(74, 144, 226, 0.1);
 }
+
+/* 検索結果ハイライト */
+.keyboard-nav-search-highlight {
+  background-color: #FFFF00;
+  color: #000;
+  padding: 0 2px;
+  border-radius: 2px;
+}
+
+.keyboard-nav-search-highlight-current {
+  background-color: #FF6B35;
+  color: #fff;
+  padding: 0 2px;
+  border-radius: 2px;
+  font-weight: bold;
+}
+
+/* 検索情報表示 */
+.keyboard-nav-search-info {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 999999;
+  background: rgba(0, 0, 0, 0.8);
+  color: #fff;
+  font-family: monospace;
+  font-size: 14px;
+  padding: 8px 16px;
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  pointer-events: none;
+}
